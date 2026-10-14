@@ -43,7 +43,7 @@ public class CameraController {
                     outputStream.flush();
                 }
 
-                Thread.sleep(33);
+                Thread.sleep(30);
             }
 
         }
