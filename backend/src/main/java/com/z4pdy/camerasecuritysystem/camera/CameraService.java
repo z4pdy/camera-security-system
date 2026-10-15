@@ -19,13 +19,14 @@ public class CameraService {
 
     @PostConstruct
     public void initCamera() {
-        VideoCapture videoCapture = new VideoCapture("/dev/video0", org.opencv.videoio.Videoio.CAP_V4L2);
-        videoCapture.set(Videoio.CAP_PROP_FOURCC, VideoWriter.fourcc('M', 'J', 'P', 'G'));
-        videoCapture.set(Videoio.CAP_PROP_FRAME_WIDTH, 1920);
-        videoCapture.set(Videoio.CAP_PROP_FRAME_HEIGHT, 1080);
-        videoCapture.set(Videoio.CAP_PROP_FPS, 30);
+        VideoCapture source = new VideoCapture("/dev/video0", org.opencv.videoio.Videoio.CAP_V4L2);
+        source.set(Videoio.CAP_PROP_FOURCC, VideoWriter.fourcc('M', 'J', 'P', 'G'));
+        source.set(Videoio.CAP_PROP_FRAME_WIDTH, 1920);
+        source.set(Videoio.CAP_PROP_FRAME_HEIGHT, 1080);
+        source.set(Videoio.CAP_PROP_FPS, 30);
 
-        camera = new CameraDevice(videoCapture);
+        camera = new CameraDevice(source);
+        camera.startCapturing();
     }
 
     public String getCameraDetails() {

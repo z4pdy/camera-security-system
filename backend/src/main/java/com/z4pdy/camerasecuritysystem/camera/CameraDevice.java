@@ -1,5 +1,7 @@
 package com.z4pdy.camerasecuritysystem.camera;
 
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfByte;
 import org.opencv.imgcodecs.Imgcodecs;
@@ -8,42 +10,90 @@ import org.opencv.videoio.VideoCapture;
 import org.opencv.videoio.Videoio;
 
 public class CameraDevice {
-    private VideoCapture camera;
+    private VideoCapture source;
+    private Mat currentFrame = new Mat();
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    private long sleepTime = 1;
 
-    public CameraDevice(VideoCapture videoCapture) {
-        camera = videoCapture;
+    public CameraDevice(VideoCapture source) {
+        if (source == null || !source.isOpened()) {
+            throw new IllegalArgumentException("Camera source is not opened or unavailable.");
+        }
+        int fps = (int) source.get(Videoio.CAP_PROP_FPS);
+        if (fps <= 0) {
+            throw new IllegalArgumentException("Camera FPS must be above 0");
+        }
+        sleepTime = 1000 / fps;
+        this.source = source;
     }
 
-    private boolean isActive() {
-        return (camera != null && camera.isOpened());
+    private boolean isInitialized() {
+        return (source != null && source.isOpened());
     }
 
     public String getDetails() {
-        if (isActive()) {
-            int width = (int) camera.get(Videoio.CAP_PROP_FRAME_WIDTH);
-            int height = (int) camera.get(Videoio.CAP_PROP_FRAME_HEIGHT);
-            double fps = camera.get(Videoio.CAP_PROP_FPS);
+        if (isInitialized()) {
+            int width = (int) source.get(Videoio.CAP_PROP_FRAME_WIDTH);
+            int height = (int) source.get(Videoio.CAP_PROP_FRAME_HEIGHT);
+            double fps = source.get(Videoio.CAP_PROP_FPS);
             return "Camera status: ACTIVE | Resolution: " + width + "x" + height + " | Fps: " + fps;
         }
         return "Camera status: INACTIVE";
     }
 
-    public byte[] getFrame() {
-        if (!isActive()) {
-            return null;
+    public void startCapturing() {
+        if (!isInitialized()) {
+            return;
         }
 
-        Mat frame = new Mat();
+        Thread captureLoopThread = new Thread(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                Mat frame = new Mat();
+                try {
+                    if (!source.read(frame) || frame.empty()) {
+                        continue;
+                    }
+
+                    lock.writeLock().lock();
+                    try {
+                        frame.copyTo(currentFrame);
+                    }
+                    finally {
+                        lock.writeLock().unlock();
+                    }
+
+                    try {
+                        Thread.sleep(sleepTime);
+                    }
+                    catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+                finally {
+                    frame.release();
+                }
+            }
+        });
+        captureLoopThread.setDaemon(true);
+        captureLoopThread.start();
+    }
+
+    public byte[] getFrame() {
+        lock.readLock().lock();
+        Mat frame;
+        try {
+            frame = currentFrame.clone();
+        }
+        finally {
+            lock.readLock().unlock();
+        }
+
         MatOfByte encodedFrame = new MatOfByte();
         try {
-            if (!camera.read(frame) || frame.empty()) {
-                return null;
-            }
-
             if (!Imgcodecs.imencode(".jpg", frame, encodedFrame)) {
                 return null;
             }
-
             return encodedFrame.toArray();
         }
         finally {
@@ -53,9 +103,9 @@ public class CameraDevice {
     }
 
     public void release() {
-        if (isActive()) {
-            camera.release();
-            System.out.println("Camera resources released.");
+        if (isInitialized()) {
+            source.release();
+            currentFrame.release();
         }
     }
 }
